@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en-GB">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Personal Podcast</title>
+<link rel="stylesheet" href="dashboard.css">
+<main>
+  <h1>Personal Podcast</h1>
+  <p>ChatGPT Read aloud → silent tab recording → local MP3</p>
+  <p id="status" role="status">Connecting…</p>
+  <p id="error" role="alert"></p>
+  <section>
+    <h2>New podcast</h2>
+    <label>Title <input id="title" value="My podcast" maxlength="100"></label>
+    <label>Input mode <select id="mode"><option value="script">Read an existing script exactly</option><option value="generate">Generate a script from a prompt</option></select></label>
+    <label>Text file (.txt or .md, UTF-8) <input id="file" type="file" accept=".txt,.md,text/plain,text/markdown"></label>
+    <label>Or enter a local file path <input id="filePath" placeholder="/Users/your-name/Documents/script.md"></label>
+    <button id="importPath">Import file by path</button>
+    <label>Script or prompt <textarea id="input" rows="7" maxlength="100000"></textarea></label>
+    <div class="row">
+      <label>Target minutes <input id="minutes" type="number" min="1" max="240" placeholder="Optional"></label>
+      <label>Tone <input id="tone" value="Natural, conversational"></label>
+      <label>Detail <select id="detail"><option>Balanced</option><option>Brief</option><option>Detailed</option></select></label>
+    </div>
+    <label><input id="research" type="checkbox"> Research and retain sources separately</label>
+    <label>Characters per section <input id="limit" type="number" value="2800" min="20" max="12000"></label>
+    <button id="create">Save new job</button>
+  </section>
+  <section>
+    <h2>Resume a job</h2>
+    <select id="jobs" aria-label="Saved jobs"></select>
+    <button id="load">Open saved job</button>
+    <button id="refresh">Refresh jobs</button>
+  </section>
+  <section id="jobPanel" hidden>
+    <h2 id="jobTitle"></h2>
+    <p id="folder"></p>
+    <button id="open">Open output folder</button>
+    <div id="generation" hidden>
+      <p>Prepare the prompt, then click Send in ChatGPT. After it finishes, save the returned script here.</p>
+      <button id="generate">Prepare generation prompt</button>
+      <button id="adopt">Save ChatGPT’s generated script</button>
+    </div>
+    <div id="sections"></div>
+    <button id="join">Join reviewed sections into MP3</button>
+    <p id="final"></p>
+  </section>
+  <p>Click the extension on the ChatGPT tab to connect it. Read aloud stays silent only while capture is armed. Use “Finish section” after playback ends; pauses and silence never finish a section. Review each saved MP3’s beginning and end before approving it. Keep the browser open and the Mac awake; lid closure and logout are unsupported.</p>
+</main>
+<script src="dashboard.js"></script>
+</html>

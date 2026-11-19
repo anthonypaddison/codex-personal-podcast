@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Personal Podcast",
+  "version": "0.2.2",
+  "minimum_chrome_version": "116",
+  "description": "Exact scripts and prompts to local MP3s using silent ChatGPT Read aloud tab capture.",
+  "permissions": ["activeTab", "tabCapture", "offscreen", "power", "storage", "scripting", "nativeMessaging"],
+  "background": {"service_worker": "worker.js"},
+  "action": {"default_title": "Connect this ChatGPT tab to Personal Podcast"}
+}
