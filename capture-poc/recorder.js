@@ -1,5 +1,5 @@
 // Only tabCapture stream IDs are accepted; the stream is never connected to speakers.
-let recorder, stream, uploadQueue, sequence, failure, stopped, resolveStopped, requestedStop;
+let recorder, stream, uploadQueue, sequence, failure, stopped, resolveStopped, requestedStop, discard;
 function base64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -14,14 +14,16 @@ async function start(streamId, attempt) {
   if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
     stream.getTracks().forEach(track => track.stop()); throw new Error('Opus/WebM recording unavailable.');
   }
-  sequence = 0; failure = null; requestedStop = false; uploadQueue = Promise.resolve();
+  sequence = 0; failure = null; requestedStop = false; discard = false; uploadQueue = Promise.resolve();
   stopped = new Promise(resolve => { resolveStopped = resolve; });
   recorder = new MediaRecorder(stream, {mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 128000});
   recorder.ondataavailable = event => {
-    if (!event.data.size) return;
+    if (discard || !event.data.size) return;
     const current = sequence++;
     uploadQueue = uploadQueue.then(async () => {
+      if (discard) return;
       const data = await base64(event.data);
+      if (discard) return;
       const response = await chrome.runtime.sendMessage({target: 'worker', type: 'chunk', attempt, sequence: current, data});
       if (response.error) throw new Error(response.error);
     }).catch(async error => {
@@ -57,6 +59,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
   if (message.type === 'stop') {
     requestedStop = true;
+    if (message.discard) {
+      discard = true;
+      stream?.getTracks().forEach(track => track.stop());
+    }
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     else if (stream) stream.getTracks().forEach(track => track.stop());
     if (stopped) stopped.then(respond); else respond({error: 'No recorder was active.'}); return true;

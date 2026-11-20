@@ -26,7 +26,7 @@ async function updateStatus() {
       ? `Recording section ${state.recording.section} silently. ${state.playback?.playing ? 'Read aloud is playing.' : state.playback ? 'Read aloud is idle. Start it when ready, or finish manually if the full passage has played.' : 'Playback state unavailable; check ChatGPT before finishing.'}`
       : state.chatTab ? 'ChatGPT connected. Select a job and prepare or arm a section.'
       : 'Open ChatGPT and click Personal Podcast to connect its tab.';
-    if (state.failure) $('error').textContent = state.failure + ' Stop Read aloud, then cancel and retry.';
+    if (state.failure) $('error').textContent = state.failure + (state.recording ? ' Stop Read aloud, then cancel and retry.' : '');
   } catch (error) { $('error').textContent = error.message; }
 }
 async function listJobs() {

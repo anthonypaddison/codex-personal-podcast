@@ -134,7 +134,8 @@ class Store:
                   'expected_characters': len(expected), 'actual_characters': len(actual_words),
                   'first_difference': None if matched else offset}
         section['verification'] = result
-        (self.folder(job_id) / f'response-{number:04d}.txt').write_text(actual, encoding='utf-8')
+        if matched:
+            (self.folder(job_id) / f'response-{number:04d}.txt').write_text(actual, encoding='utf-8')
         self.save(job)
         return result
 

@@ -36,7 +36,7 @@ To use it again, open the same dedicated profile and click the extension on the 
 2. For each numbered section, click **Prepare section in ChatGPT**. In ChatGPT, click **Send** and wait for the entire response.
 3. Return to the dashboard and click **Arm recording / retry**. The returned text must match before arming succeeds. Only layout whitespace is normalised for this comparison; original text is preserved verbatim in the manifest and narration file.
 4. In ChatGPT, click **Read aloud**. The tab is captured silently. Continue using other apps; keep the browser and Mac open.
-5. The dashboard shows whether Read aloud is playing or idle. After the complete passage has played, click **Finish section · stop and save**. This stops any remaining Read aloud playback before releasing capture. Idle can also mean playback has not started, was paused, or failed; no silence timer marks completion.
+5. The dashboard shows whether Read aloud is playing or idle. After the complete passage has played, click **Finish section · stop and save**. This stops any remaining Read aloud playback before releasing capture. Idle can also mean playback has not started, was paused, or failed; no silence timer marks completion. Closing the recording tab, leaving ChatGPT in that tab, or starting a full page load stops capture and cancels the attempt. Reopen the saved job to retry.
 6. Play the saved section and check its beginning, end and wording. Click **I checked the speech, beginning and end** only after doing so.
 7. Join reviewed sections into one MP3. The output folder button opens the result.
 
@@ -62,7 +62,7 @@ The recorder sends numbered chunks to disk once per second. Missing, duplicate o
 
 Recordings include the waiting time between arming and playback and between playback and finishing. Silence is retained to avoid automatically cutting off speech. Background operation was part of the initial capture proof. Browser closure, logout, lid closure and sleep are unsupported. Sleep prevention is requested only during capture and released after finishing/cancelling; pre-existing Mac sleep settings are left alone.
 
-Paragraphs are kept intact, including their original separators. A single paragraph longer than 12,000 characters is refused at preparation time; add paragraph boundaries in a new job. ChatGPT refusals, rewriting, repeats and truncation fail verification. Instructions inside a document are sent as quoted narration content, and a mismatching response cannot be armed.
+Paragraphs are kept intact, including their original separators. A single paragraph longer than 12,000 characters is refused at preparation time; add paragraph boundaries in a new job. ChatGPT refusals, rewriting, repeats and truncation fail verification. On a mismatch, only verification metadata is saved, without the rejected reply text. Instructions inside a document are sent as quoted narration content, and a mismatching response cannot be armed.
 
 ## Validation
 

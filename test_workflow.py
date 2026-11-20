@@ -40,13 +40,24 @@ class WorkflowTests(unittest.TestCase):
 
     def test_verify_blocks_rewritten_repeated_and_truncated_responses(self):
         job = self.job('A red boat crosses the harbour.')
+        response = self.store.folder(job['id']) / 'response-0001.txt'
         for actual in ['A blue boat crosses the harbour.', 'A red boat.',
                        'A red boat crosses the harbour. A red boat crosses the harbour.']:
             with self.subTest(actual=actual):
                 result = self.store.verify(job['id'], 1, actual)
                 self.assertFalse(result['matched'])
+                self.assertFalse(response.exists())
                 with self.assertRaises(ValueError):
                     self.store.begin(job['id'], 1)
+
+    def test_mismatch_preserves_the_last_verified_response(self):
+        job = self.job('A test.')
+        folder = self.store.folder(job['id'])
+        self.store.verify(job['id'], 1, 'A test.')
+        self.store.verify(job['id'], 1, 'Unrelated private reply.')
+        self.assertEqual((folder / 'response-0001.txt').read_text(), 'A test.')
+        self.assertNotIn('Unrelated private reply.', (folder / 'manifest.json').read_text())
+        self.assertFalse(self.store.get(job['id'])['sections'][0]['verification']['matched'])
 
     def test_only_layout_whitespace_is_ignored_in_verification(self):
         job = self.job('First paragraph.\n\nSecond paragraph.', 100)
