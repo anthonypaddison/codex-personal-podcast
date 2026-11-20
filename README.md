@@ -1,5 +1,7 @@
 # Personal Podcast
 
+> **No longer maintained.** The source is available under the [MIT License](LICENSE). This workflow depends on the ChatGPT web interface and Chrome tab capture. Changes to either may stop it working.
+
 Turn a script or a ChatGPT prompt into a local MP3 using ChatGPT **Read aloud**. The extension captures only the selected tab in a dedicated Chrome profile. Your other apps can continue playing sound.
 
 If you received a Git bundle, clone it with `git clone "/path/to/Personal Podcast.bundle" personal-podcast`, then follow the setup below.
