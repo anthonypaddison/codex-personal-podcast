@@ -1,11 +1,14 @@
 importScripts('host-client.js', 'chat-ui.js');
 let busy = false;
+let arming, stopping;
 
-async function chat(operation, text) {
-  const {chatTab} = await chrome.storage.session.get('chatTab');
+const isChatGPT = url => Boolean(url && new URL(url).origin === 'https://chatgpt.com');
+
+async function chat(operation, text, chatTab) {
+  if (!chatTab) ({chatTab} = await chrome.storage.session.get('chatTab'));
   if (!chatTab) throw new Error('Click Personal Podcast on the ChatGPT tab first.');
   const tab = await chrome.tabs.get(chatTab);
-  if (!tab.url || new URL(tab.url).origin !== 'https://chatgpt.com') throw new Error('Selected ChatGPT tab closed or navigated away.');
+  if (!isChatGPT(tab.pendingUrl || tab.url)) throw new Error('Selected ChatGPT tab closed or navigated away.');
   const results = await chrome.scripting.executeScript({target: {tabId: chatTab}, func: chatUI, args: [operation, text ?? null]});
   return results[0].result;
 }
@@ -22,7 +25,10 @@ async function recorderDocument() {
 }
 chrome.action.onClicked.addListener(async tab => {
   try {
-    if (tab.url && new URL(tab.url).origin === 'https://chatgpt.com') await chrome.storage.session.set({chatTab: tab.id});
+    const {recording} = await chrome.storage.session.get('recording');
+    if (!arming && !recording && !stopping && isChatGPT(tab.url)) {
+      await chrome.storage.session.set({chatTab: tab.id});
+    }
     const url = chrome.runtime.getURL('dashboard.html');
     const existing = (await chrome.tabs.query({url}))[0];
     if (existing) await chrome.tabs.update(existing.id, {active: true});
@@ -35,7 +41,7 @@ async function handle(message) {
   if (type === 'status') {
     const state = await chrome.storage.session.get(['chatTab', 'recording', 'failure']);
     if (state.recording) {
-      try { state.playback = await chat('inspect'); }
+      try { state.playback = await chat('inspect', null, state.recording.tabId || state.chatTab); }
       catch (error) { state.playbackError = error.message; }
     }
     return state;
@@ -69,44 +75,68 @@ async function handle(message) {
   }
   if (type === 'arm') {
     const {recording, chatTab, prepared} = await chrome.storage.session.get(['recording', 'chatTab', 'prepared']);
-    if (recording) throw new Error('Finish or cancel the active section first.');
-    const state = await chat('inspect');
-    if (state.playing || state.generating || !state.hasReadAloud) throw new Error('Stop playback and wait for a completed response before arming.');
-    const verified = await host('verify', {job: jobId, section: number, response: state.text});
-    if (!verified.matched) throw new Error(`Text mismatch at character ${verified.first_difference + 1}; expected ${verified.expected_characters}, received ${verified.actual_characters}. Prepare this section again.`);
-    if (prepared && prepared.job === jobId && prepared.section === number && state.count <= prepared.count) throw new Error('Send the prepared section and wait for the new response.');
-    await recorderDocument();
-    const attempt = await host('begin', {job: jobId, section: number});
+    if (recording || stopping) throw new Error('Finish or cancel the active section first.');
+    if (!chatTab) throw new Error('Click Personal Podcast on the ChatGPT tab first.');
+    const pending = arming = {tabId: chatTab};
+    let attempt, startRequested = false;
+    const checkTab = async () => {
+      const tab = await chrome.tabs.get(chatTab).catch(() => null);
+      if (pending.reason || !isChatGPT(tab?.pendingUrl || tab?.url) || tab?.status === 'loading') {
+        throw new Error(pending.reason ||= 'The recording tab changed. Reconnect ChatGPT and try again.');
+      }
+    };
     try {
+      await checkTab();
+      const state = await chat('inspect', null, chatTab);
+      if (state.playing || state.generating || !state.hasReadAloud) throw new Error('Stop playback and wait for a completed response before arming.');
+      const verified = await host('verify', {job: jobId, section: number, response: state.text});
+      if (!verified.matched) throw new Error(`Text mismatch at character ${verified.first_difference + 1}; expected ${verified.expected_characters}, received ${verified.actual_characters}. Prepare this section again.`);
+      if (prepared && prepared.job === jobId && prepared.section === number && state.count <= prepared.count) throw new Error('Send the prepared section and wait for the new response.');
+      await recorderDocument();
+      attempt = await host('begin', {job: jobId, section: number});
+      await checkTab();
       const streamId = await chrome.tabCapture.getMediaStreamId({targetTabId: chatTab});
+      await checkTab();
+      startRequested = true;
       const started = await offscreen({type: 'start', streamId, attempt: attempt.attempt});
       if (started.error) throw new Error(started.error);
-      await chrome.storage.session.set({recording: {job: jobId, section: number, attempt: attempt.attempt}, failure: null});
-      chrome.power.requestKeepAwake('system'); await badge('REC');
+      await checkTab();
+      await chrome.storage.session.set({recording: {job: jobId, section: number, attempt: attempt.attempt, tabId: chatTab}, failure: null});
+      await badge('REC');
+      if (pending.reason) throw new Error(pending.reason);
+      chrome.power.requestKeepAwake('system');
       return {notice: `Section ${number} armed and silent. Click Read aloud in ChatGPT, then finish here after playback ends.`};
     } catch (error) {
-      await host('finish', {attempt: attempt.attempt, cancelled: true, error: error.message});
-      chrome.power.releaseKeepAwake(); throw error;
+      if (attempt) {
+        if (startRequested) await stopRecording(attempt, true, error.message);
+        else await host('finish', {attempt: attempt.attempt, cancelled: true, error: error.message});
+      }
+      throw error;
+    } finally {
+      arming = null;
     }
   }
   if (type === 'finish' || type === 'cancel') {
-    const {recording} = await chrome.storage.session.get('recording');
+    const {recording, chatTab} = await chrome.storage.session.get(['recording', 'chatTab']);
     if (!recording) throw new Error('No active recording. Reopen your saved job to resume.');
-    await chat('stop');
-    for (let i = 0; i < 15; i++) {
-      if (!(await chat('inspect')).playing) break;
-      if (i === 14) throw new Error('Stop Read aloud manually first. Capture remains armed to keep narration silent.');
-      await new Promise(resolve => setTimeout(resolve, 150));
+    const tabId = recording.tabId || chatTab;
+    try {
+      await chat('stop', null, tabId);
+      for (let i = 0; i < 15; i++) {
+        if (!(await chat('inspect', null, tabId)).playing) break;
+        if (i === 14) throw new Error('Stop Read aloud manually first. Capture remains armed to keep narration silent.');
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    } catch (error) {
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!isChatGPT(tab?.pendingUrl || tab?.url)) {
+        return (await interruptRecording(tabId, 'The recording tab left ChatGPT.')) || host('get', {job: recording.job});
+      }
+      throw error;
     }
-    const stopped = await offscreen({type: 'stop'});
-    let job;
-    try { job = await host('finish', {attempt: recording.attempt, cancelled: type === 'cancel' || Boolean(stopped.error), error: stopped.error}); }
-    finally {
-      await chrome.storage.session.remove('recording');
-      chrome.power.releaseKeepAwake(); await badge(stopped.error ? 'ERR' : '');
-    }
-    if (stopped.error) throw new Error(stopped.error + ' Raw chunks retained; retry this section.');
-    return job;
+    const current = await chrome.storage.session.get('recording');
+    if (current.recording?.attempt !== recording.attempt) return host('get', {job: recording.job});
+    return stopRecording(recording, type === 'cancel');
   }
   throw new Error('Unknown interface action.');
 }
@@ -129,13 +159,53 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   handle(message).then(result => respond({result}), error => respond({error: error.message})).finally(() => { busy = false; });
   return true;
 });
-chrome.tabs.onRemoved.addListener(async tabId => {
+// Finalize each attempt once, even if the user stops it as the tab navigates.
+function stopRecording(recording, cancelled, reason) {
+  if (stopping) return stopping;
+  stopping = (async () => {
+    let stopped;
+    try {
+      try {
+        stopped = await offscreen({type: 'stop', discard: Boolean(reason)});
+      } catch (error) {
+        // Closing the offscreen document also tears down its media stream.
+        if (await chrome.offscreen.hasDocument()) await chrome.offscreen.closeDocument();
+        stopped = {error: error.message};
+      }
+      const error = reason || stopped.error;
+      const job = await host('finish', {attempt: recording.attempt, cancelled: cancelled || Boolean(error), error});
+      if (!reason && stopped.error) throw new Error(stopped.error + ' Raw chunks retained; retry this section.');
+      return job;
+    } finally {
+      chrome.power.releaseKeepAwake();
+      await chrome.storage.session.remove('recording');
+      await chrome.storage.session.set({failure: reason || stopped?.error || null});
+      await badge(reason || stopped?.error ? 'ERR' : '');
+    }
+  })().finally(() => { stopping = null; });
+  return stopping;
+}
+
+async function interruptRecording(tabId, reason) {
+  if (arming?.tabId === tabId) {
+    arming.reason ||= reason;
+    return;
+  }
   const {chatTab, recording} = await chrome.storage.session.get(['chatTab', 'recording']);
-  if (tabId !== chatTab || !recording) return;
-  try {
-    const stopped = await offscreen({type: 'stop'});
-    await host('finish', {attempt: recording.attempt, cancelled: true, error: stopped.error || 'ChatGPT tab closed.'});
-  } finally {
-    chrome.power.releaseKeepAwake(); await chrome.storage.session.remove(['recording', 'chatTab']); await badge('ERR');
+  if (recording && (recording.tabId || chatTab) === tabId) return stopRecording(recording, true, reason);
+}
+
+function stopOnDeparture(tabId, reason) {
+  return interruptRecording(tabId, reason).catch(async error => {
+    await chrome.storage.session.set({failure: error.message});
+    await badge('ERR');
+  });
+}
+
+chrome.tabs.onRemoved.addListener(tabId => stopOnDeparture(tabId, 'The recording tab closed.'));
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  // A full load can hide its destination under activeTab. Stop at load start.
+  if (change.status === 'loading' || (change.url && !isChatGPT(change.url))) {
+    return stopOnDeparture(tabId, 'The recording tab navigated. Reopen the saved job and retry.');
   }
 });
